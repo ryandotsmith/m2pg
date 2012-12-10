@@ -118,7 +118,8 @@ func getMetrics(d *sql.DB, name string, metricsCh chan []*metric, wg *sync.WaitG
 		`)
 		if err != nil {
 			fmt.Printf("at=select-error err=%s\n", err)
-			result <- nil
+			result <- make([]*metric, 0)
+			return
 		}
 		defer rows.Close()
 		var metrics []*metric
