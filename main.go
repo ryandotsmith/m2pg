@@ -54,7 +54,7 @@ func initDb() {
 	for _, url := range urls {
 		conf, err := pq.ParseURL(url)
 		if err != nil {
-			fmt.Printf("Unable to parse DATABASE_URLS.\n")
+			fmt.Printf("at=error error=\"Unable to parse DATABASE_URLS.\"\n")
 			os.Exit(1)
 		}
 		db, err := sql.Open("postgres", conf)
@@ -191,5 +191,10 @@ func routeHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	initDb()
 	http.HandleFunc("/metrics", routeHandler)
-	http.ListenAndServe(":"+os.Getenv("PORT"), nil)
+	port := os.Getenv("PORT")
+	if len(port) == 0 {
+		fmt.Printf("at=error error=\"port not defined\"\n")
+		os.Exit(1)
+	}
+	http.ListenAndServe(":"+port,  nil)
 }
