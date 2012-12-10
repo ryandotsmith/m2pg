@@ -34,7 +34,7 @@ Download source and create a Heroku app.
 
 ```bash
 $ git clone https://github.com/ryandotsmith/m2pg.git
-$ heroku create myapp
+$ heroku create myapp -b https://github.com/kr/heroku-buildpack-go.git
 ```
 
 Setup a couple of dev databases & setup our DATABASE_URLS list. Notice the `|` separator.
