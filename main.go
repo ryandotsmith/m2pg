@@ -3,12 +3,13 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/bmizerany/pq"
 	"net/http"
 	"os"
 	"strings"
-	"sync"
+	"time"
 )
 
 var dbArray []*sql.DB
@@ -57,7 +58,7 @@ func initDb() {
 	}
 }
 
-func insertMetric(m *metric) string {
+func insertMetric(m *metric) (string, error) {
 	id := genUUID()
 	ch := make(chan int, 1)
 	for _, db := range dbArray {
@@ -67,18 +68,23 @@ func insertMetric(m *metric) string {
 					VALUES ($1, $2, $3, $4)`,
 				id, m.Name, m.Count, m.Mean)
 			if err != nil {
-				fmt.Printf("at=insert-error error=%s\n", err)
+				fmt.Printf("measure=insert-error error=%s\n", err)
+			} else {
+				ch <- 1
 			}
-			ch <- 1
 		}(db)
 	}
-	// We can return when the first db insert succeeds.
-	<-ch
-	return id
+	timeout := time.Tick(time.Second * 10)
+	select {
+	case <-ch:
+		return id, nil
+	case <-timeout:
+		return "", errors.New("Unable to write metric")
+	}
+	return "", errors.New("Unhandled error.")
 }
 
-func getMetrics(d *sql.DB, name string, results chan *metric, wg *sync.WaitGroup) {
-	defer wg.Done()
+func getMetrics(d *sql.DB, name string, result chan []*metric) {
 	rows, err := d.Query(`
 		select
 		  id,
@@ -94,29 +100,24 @@ func getMetrics(d *sql.DB, name string, results chan *metric, wg *sync.WaitGroup
 		return
 	}
 	defer rows.Close()
+	var metrics []*metric
 	for rows.Next() {
 		m := &metric{}
 		rows.Scan(&m.Id, &m.Name, &m.Count, &m.Mean)
-		results <- m
+		metrics = append(metrics, m)
 	}
+	result <- metrics
 }
 
 func composeMetrics(name string) (returnList []*metric) {
-	results := make(chan *metric)
-	var wg sync.WaitGroup
+	result := make(chan []*metric)
 	for _, db := range dbArray {
-		wg.Add(1)
-		go getMetrics(db, name, results, &wg)
+		go getMetrics(db, name, result)
 	}
-	// When all of the getMetrics funcs are complete,
-	// we need to close the results chan to break our loop.
-	go func(w *sync.WaitGroup, c chan *metric) {
-		w.Wait()
-		close(c)
-	}(&wg, results)
-
+	//First result to come back wins.
+	metrics := <-result
 	uniqueMetrics := make(map[string]*metric)
-	for metric := range results {
+	for _, metric := range metrics {
 		uuid := metric.Id
 		if _, ok := uniqueMetrics[uuid]; !ok {
 			uniqueMetrics[uuid] = metric
@@ -133,7 +134,12 @@ func routeHandler(w http.ResponseWriter, r *http.Request) {
 	case "POST":
 		m := &metric{}
 		json.NewDecoder(r.Body).Decode(m)
-		writeJson(w, 201, insertMetric(m))
+		b, err := insertMetric(m)
+		if err != nil {
+			writeJson(w, 500, map[string]error{"error": err})
+		} else {
+			writeJson(w, 201, b)
+		}
 	case "GET":
 		writeJson(w, 200, composeMetrics("hello"))
 	}
