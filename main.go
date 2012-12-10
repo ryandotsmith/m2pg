@@ -142,5 +142,5 @@ func routeHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	initDb()
 	http.HandleFunc("/metrics", routeHandler)
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":"+os.Getenv("PORT"), nil)
 }
