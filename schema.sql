@@ -1,6 +1,6 @@
 create table metrics(
   id uuid,
-  bucket int,
+  bucket timestamptz,
   name text,
   count numeric,
   mean numeric,

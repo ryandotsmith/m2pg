@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"github.com/bmizerany/pq"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,14 +20,14 @@ var dbArray []*sql.DB
 
 type metricQuery struct {
 	Name       string
-	From       int
-	To         int
+	From	   string
+	To         string
 	Resolution string
 }
 
 type metric struct {
 	Id     string  `json:"-"`
-	Bucket int64   `json:"bucket"`
+	Bucket string  `json:"bucket"`
 	Name   string  `json:"name"`
 	Count  float64 `json:"count"`
 	Mean   float64 `json:"mean"`
@@ -88,7 +86,7 @@ func initDb() {
 // not disrupt m2pg's write APIs.
 func insertMetric(m *metric) (string, error) {
 	id := genUUID()
-	ch := make(chan int, 1)
+	writeSuccess := make(chan bool, 1)
 	for _, db := range dbArray {
 		go func(d *sql.DB) {
 			_, err := d.Exec(`
@@ -99,18 +97,27 @@ func insertMetric(m *metric) (string, error) {
 				id, m.Bucket, m.Name, m.Count, m.Mean, m.Median,
 				m.Min, m.Max, m.Perc95, m.Perc99, m.Last)
 			if err != nil {
-				fmt.Printf("measure=insert-error error=%s\n", err)
+				var insertError string
+				prefix := strings.Split(err.Error(), ":")
+				if len(prefix) > 0 {
+					insertError = prefix[0]
+				} else {
+					insertError = "unkown"
+				}
+				fmt.Printf("measure=insert-error error=%s\n", insertError)
 			} else {
-				ch <- 1
+				writeSuccess <- true
 			}
 		}(db)
 	}
-	timeout := time.Tick(time.Second * 2)
+	timeout := time.Tick(time.Second)
 	select {
-	case <-ch:
-		return id, nil
+	case succes := <-writeSuccess:
+		if succes {
+			return id, nil
+		}
 	case <-timeout:
-		return "", errors.New("Unable to write metric")
+		return "", errors.New("Unable to write metric.")
 	}
 	return "", errors.New("Unhandled error.")
 }
@@ -135,8 +142,8 @@ func getMetrics(d *sql.DB, q *metricQuery, metricsCh chan []*metric, wg *sync.Wa
 		defer rows.Close()
 		var metrics []*metric
 		for rows.Next() {
-			m := &metric{}
-			rows.Scan(&m.Name, &m.Bucket, &m.Count, &m.Mean, &m.Median,
+			m := new(metric)
+			rows.Scan(&m.Id, &m.Name, &m.Bucket, &m.Count, &m.Mean, &m.Median,
 				&m.Min, &m.Max, &m.Perc95, &m.Perc99, &m.Last)
 			metrics = append(metrics, m)
 		}
@@ -170,6 +177,7 @@ func composeMetrics(q *metricQuery) (returnList []*metric) {
 	for metrics := range results {
 		for _, metric := range metrics {
 			uuid := metric.Id
+			fmt.Printf("id=%s name=%s bucket=%s\n", uuid, metric.Name, metric.Bucket)
 			if _, ok := uniqueMetrics[uuid]; !ok {
 				uniqueMetrics[uuid] = metric
 			}
@@ -184,25 +192,10 @@ func composeMetrics(q *metricQuery) (returnList []*metric) {
 }
 
 func parseQuery(q *metricQuery, r *http.Request) (inputErr []string) {
-	from, err := strconv.Atoi(r.FormValue("from"))
-	if err != nil {
-		var m bytes.Buffer
-		fmt.Fprintf(&m, "Invalid input. from=%d", from)
-		inputErr = append(inputErr, m.String())
-	}
-	to, err := strconv.Atoi(r.FormValue("to"))
-	if err != nil {
-		var m bytes.Buffer
-		fmt.Fprintf(&m, "Invalid input. from=%d", from)
-		inputErr = append(inputErr, m.String())
-	}
 	q.Name = r.FormValue("name")
-	q.From = from
-	q.To = to
+	q.From = r.FormValue("from")
+	q.To = r.FormValue("to")
 	q.Resolution = r.FormValue("resolution")
-	if len(inputErr) > 0 {
-		return inputErr
-	}
 	return nil
 }
 
