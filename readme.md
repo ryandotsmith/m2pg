@@ -9,11 +9,8 @@ M2pg is designed to be a simple UNIX like utility. It's primary goal is to provi
 ### Read
 
 ```bash
-$ curl -i -X GET https://m2pg.herokuapp.com/metrics \
-  -d "name=foo.web" \
-  -d "from=1355202720" \
-  -d "to=1355202759" \
-  -d "resolution=minute"
+$ curl -i -X GET \
+  "https://m2pg.herokuapp.com/metrics?name=foo.web&from=1355202720&to=1355202759&resolution=minute"
 
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
