@@ -8,6 +8,8 @@ M2pg is designed to be a simple UNIX like utility. It's primary goal is to provi
 
 ### Read
 
+**GET /metrics ?name&from&to&resolution**
+
 #### name
 
 The name parameter helps m2pg find metrics. It behaves like a regular expression so queries like the following are valid and quite handy:
