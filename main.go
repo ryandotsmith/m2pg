@@ -19,10 +19,17 @@ import (
 var dbArray []*sql.DB
 
 type metric struct {
-	Id    string  `json:"id"`
-	Name  string  `json:"name"`
-	Count float64 `json:"count"`
-	Mean  float64 `json:"mean"`
+	Id     string  `json:"-"`
+	Bucket int64   `json:"bucket"`
+	Name   string  `json:"name"`
+	Count  float64 `json:"count"`
+	Mean   float64 `json:"mean"`
+	Median float64 `json:"median"`
+	Min    float64 `json:"min"`
+	Max    float64 `json:"max"`
+	Perc95 float64 `json:"perc95"`
+	Perc99 float64 `json:"perc99"`
+	Last   float64 `json:"last"`
 }
 
 // This is technically NOT universal. However,
@@ -76,9 +83,12 @@ func insertMetric(m *metric) (string, error) {
 	for _, db := range dbArray {
 		go func(d *sql.DB) {
 			_, err := d.Exec(`
-					INSERT INTO metrics (id, name, count, mean)
-					VALUES ($1, $2, $3, $4)`,
-				id, m.Name, m.Count, m.Mean)
+				INSERT INTO metrics
+				(id, bucket, name, count, mean, median,
+				  min, max, perc95, perc99, last)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+				id, m.Bucket, m.Name, m.Count, m.Mean, m.Median,
+				m.Min, m.Max, m.Perc95, m.Perc99, m.Last)
 			if err != nil {
 				fmt.Printf("measure=insert-error error=%s\n", err)
 			} else {
@@ -86,7 +96,7 @@ func insertMetric(m *metric) (string, error) {
 			}
 		}(db)
 	}
-	timeout := time.Tick(time.Second * 10)
+	timeout := time.Tick(time.Second * 2)
 	select {
 	case <-ch:
 		return id, nil
@@ -125,7 +135,8 @@ func getMetrics(d *sql.DB, name string, metricsCh chan []*metric, wg *sync.WaitG
 		var metrics []*metric
 		for rows.Next() {
 			m := &metric{}
-			rows.Scan(&m.Id, &m.Name, &m.Count, &m.Mean)
+			rows.Scan(&m.Id, &m.Bucket, &m.Name, &m.Count, &m.Mean, &m.Median,
+				&m.Min, &m.Max, &m.Perc95, &m.Perc99, &m.Last)
 			metrics = append(metrics, m)
 		}
 		result <- metrics
@@ -196,5 +207,5 @@ func main() {
 		fmt.Printf("at=error error=\"port not defined\"\n")
 		os.Exit(1)
 	}
-	http.ListenAndServe(":"+port,  nil)
+	http.ListenAndServe(":"+port, nil)
 }
