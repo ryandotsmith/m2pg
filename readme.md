@@ -77,6 +77,8 @@ Transfer-Encoding: chunked
 
 ### Write
 
+**POST /metrics**
+
 ```bash
 $ curl -i -X POST https://m2pg.herokuapp.com/metrics \
   -d '{"bucket": 1355202720,
