@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -11,12 +12,20 @@ import (
 	"github.com/bmizerany/pq"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 var dbArray []*sql.DB
+
+type metricQuery struct {
+	Name       string
+	From       int
+	To         int
+	Resolution string
+}
 
 type metric struct {
 	Id     string  `json:"-"`
@@ -111,21 +120,13 @@ func insertMetric(m *metric) (string, error) {
 // for the case in which the database is offline. When the query
 // has timedot, we signal that we are done via the WaitGroup so that
 // the caller of getMetrics can sucessfully degrade.
-func getMetrics(d *sql.DB, name string, metricsCh chan []*metric, wg *sync.WaitGroup) {
+func getMetrics(d *sql.DB, q *metricQuery, metricsCh chan []*metric, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 	result := make(chan []*metric, 1)
 	go func() {
-		rows, err := d.Query(`
-			select
-			  id,
-			  name,
-			  sum(count) as count,
-			  avg(mean) as mean
-			from
-			  metrics
-			group by id, name
-		`)
+		rows, err := d.Query(`select * from metrics($1, $2, $3, $4)`,
+			q.Name, q.From, q.To, q.Resolution)
 		if err != nil {
 			fmt.Printf("at=select-error err=%s\n", err)
 			result <- make([]*metric, 0)
@@ -135,7 +136,7 @@ func getMetrics(d *sql.DB, name string, metricsCh chan []*metric, wg *sync.WaitG
 		var metrics []*metric
 		for rows.Next() {
 			m := &metric{}
-			rows.Scan(&m.Id, &m.Bucket, &m.Name, &m.Count, &m.Mean, &m.Median,
+			rows.Scan(&m.Name, &m.Bucket, &m.Count, &m.Mean, &m.Median,
 				&m.Min, &m.Max, &m.Perc95, &m.Perc99, &m.Last)
 			metrics = append(metrics, m)
 		}
@@ -152,11 +153,11 @@ func getMetrics(d *sql.DB, name string, metricsCh chan []*metric, wg *sync.WaitG
 
 // ComposeMetrics will query each database in parellel, remove duplicates
 // then return a slice of metrics that were matched by the query.
-func composeMetrics(name string) (returnList []*metric) {
+func composeMetrics(q *metricQuery) (returnList []*metric) {
 	results := make(chan []*metric)
 	var wg sync.WaitGroup
 	for _, db := range dbArray {
-		go getMetrics(db, name, results, &wg)
+		go getMetrics(db, q, results, &wg)
 	}
 	//When all of the goroutines are finished getting metrics,
 	//we will close the chan to break or loop.
@@ -182,11 +183,34 @@ func composeMetrics(name string) (returnList []*metric) {
 	return returnList
 }
 
+func parseQuery(q *metricQuery, r *http.Request) (inputErr []string) {
+	from, err := strconv.Atoi(r.FormValue("from"))
+	if err != nil {
+		var m bytes.Buffer
+		fmt.Fprintf(&m, "Invalid input. from=%d", from)
+		inputErr = append(inputErr, m.String())
+	}
+	to, err := strconv.Atoi(r.FormValue("to"))
+	if err != nil {
+		var m bytes.Buffer
+		fmt.Fprintf(&m, "Invalid input. from=%d", from)
+		inputErr = append(inputErr, m.String())
+	}
+	q.Name = r.FormValue("name")
+	q.From = from
+	q.To = to
+	q.Resolution = r.FormValue("resolution")
+	if len(inputErr) > 0 {
+		return inputErr
+	}
+	return nil
+}
+
 // m2pg has two endpoints. POST /metrics and GET /metrics.
 func routeHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "POST":
-		m := &metric{}
+		m := new(metric)
 		json.NewDecoder(r.Body).Decode(m)
 		b, err := insertMetric(m)
 		if err != nil {
@@ -195,7 +219,13 @@ func routeHandler(w http.ResponseWriter, r *http.Request) {
 			writeJson(w, 201, b)
 		}
 	case "GET":
-		writeJson(w, 200, composeMetrics("hello"))
+		q := new(metricQuery)
+		err := parseQuery(q, r)
+		if err != nil {
+			writeJson(w, 422, map[string][]string{"errors": err})
+		} else {
+			writeJson(w, 200, composeMetrics(q))
+		}
 	}
 }
 
