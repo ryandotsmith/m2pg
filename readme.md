@@ -4,6 +4,71 @@ M2pg collects & serves metrics via an HTTP API. This service was designed to be 
 
 M2pg is designed to be a simple UNIX like utility. It's primary goal is to provide mechanisms that make storing and retrieving metrics simple and easy. In addition to developer experience, m2pg is designed to run on modern platforms like Heroku. It uses HTTP receivers which can be positioned behind load balancers. M2pg also makes special use of the PostgreSQL RDBMS. Specifically, it can safely use multiple database connections to store data in redundant systems.
 
+## API
+
+### Read
+
+```bash
+$ curl -i -X GET https://m2pg.herokuapp.com/metrics \
+  -d "name=foo.web" \
+  -d "from=1355202720" \
+  -d "to=1355202759" \
+  -d "resolution=minute"
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Date: Tue, 11 Dec 2012 05:23:13 GMT
+Transfer-Encoding: chunked
+
+[
+	{
+		"name":    "foo.web.requests",
+		"count":   [{"bucket": 1355202720, "value": 42}],
+		"mean":    [{"bucket": 1355202720, "value": 3.14}],
+		"median":  [{"bucket": 1355202720, "value": 3.14}],
+		"min":     [{"bucket": 1355202720, "value": 3.14}],
+		"max":     [{"bucket": 1355202720, "value": 3.14}],
+		"perc95":  [{"bucket": 1355202720, "value": 3.14}],
+		"perc99":  [{"bucket": 1355202720, "value": 3.14}],
+		"last":    [{"bucket": 1355202720, "value": 3.14}],
+	},
+	{
+		"name":    "foo.web.special-requests",
+		"count":   [{"bucket": 1355202720, "value": 42}],
+		"mean":    [{"bucket": 1355202720, "value": 3.14}],
+		"median":  [{"bucket": 1355202720, "value": 3.14}],
+		"min":     [{"bucket": 1355202720, "value": 3.14}],
+		"max":     [{"bucket": 1355202720, "value": 3.14}],
+		"perc95":  [{"bucket": 1355202720, "value": 3.14}],
+		"perc99":  [{"bucket": 1355202720, "value": 3.14}],
+		"last":    [{"bucket": 1355202720, "value": 3.14}],
+	}
+]
+```
+
+### Write
+
+```bash
+$ curl -i -X POST https://m2pg.herokuapp.com/metrics \
+  -d '{"bucket": 1355202720,
+        "name": "foo.web.requests",
+        "count": 100,
+        "mean": 50,
+        "median": 50,
+        "min": 0,
+        "max": 100,
+        "perc95": 95,
+        "perc99": 99,
+        "last": 95}'
+
+HTTP/1.1 201 Created
+Content-Type: application/json; charset=utf-8
+Date: Tue, 11 Dec 2012 05:19:24 GMT
+Transfer-Encoding: chunked
+
+"e5176747-cb3f-aaeb-7872-e00c353326c8"
+```
+
 ## How It Works
 
 M2pg is designed to accept input from [l2met](https://github.com/ryandotsmith/l2met).
