@@ -8,6 +8,36 @@ M2pg is designed to be a simple UNIX like utility. It's primary goal is to provi
 
 ### Read
 
+#### name
+
+The name parameter helps m2pg find metrics. It behaves like a regular expression so queries like the following are valid and quite handy:
+
+```
+?name=my-app-(prod|staging)
+```
+
+#### from
+
+Return no events less than this parameter. Format should be [rfc3339](http://www.ietf.org/rfc/rfc3339.txt) compatible.
+
+#### to
+
+Return no events greater than this parameter. Format should be [rfc3339](http://www.ietf.org/rfc/rfc3339.txt) compatible.
+
+#### resolution
+
+The metrics returned will be grouped by their resolution. Valid formats include:
+
+* second, s
+* minute, m
+* hour, h
+* day, d
+* week, w
+* month, m
+* year, y
+
+#### Example
+
 ```bash
 $ curl -i -X GET \
   "https://m2pg.herokuapp.com/metrics?name=foo.web&from=1355202720&to=1355202759&resolution=minute"
